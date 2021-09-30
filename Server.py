@@ -1,5 +1,6 @@
 import socket
 import threading
+import BaseClient
 
 HEADER = 1024
 PORT = 8080
@@ -17,8 +18,24 @@ server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 #Binds the server to the address specified
 server.bind(ADDR)
 
-MASTER = ()
-SLAVES = []
+MASTER = None
+SLAVES = {}
+
+def Interpret(connection, address, message):
+    if(message == DISCONNECT_MESSAGE):
+        return False
+    
+    #Checks to see if the message is a command
+    if (len(message.split(":"))) == 1:
+        return True
+    
+    #IP_ADDRESS:FOO AB C
+    #Send IP address of device first
+    #Send function name afterwards
+    #Number of variables after
+    address = message.split(":")[0]
+    SLAVES[address].send(message.encode(FORMAT))
+    return True
 
 #Handles connection between client and server
 #runs for EACH CLIENT
@@ -26,11 +43,14 @@ def handle_client(connection, address):
 	print(f"New connection {address} connected")
 	
 	if threading.activeCount() == 2:
-		MASTER = (connection, address)
-		connection.send('M'.encode(FORMAT))
+		MASTER = BaseClient.Client(connection, address)
+		if MASTER.messageCount == 0:
+			MASTER.connection.send('M'.encode(FORMAT))
+			MASTER.messageCount += 1
 	elif threading.activeCount() > 2:
-		slave = (connection, address)
-		SLAVES.append(slave)
+		SLAVES[address] = connection
+		#Sends an identifying address for the device that just joined
+		MASTER.connection.send(f"{address}".encode(FORMAT))
 		connection.send('S'.encode(FORMAT))
         
         
@@ -42,13 +62,10 @@ def handle_client(connection, address):
 		if message_length:
 			message_length = int(message_length)
 			message = connection.recv(message_length).decode(FORMAT)
-			if(message == DISCONNECT_MESSAGE):
-				connected = False
-				print(f"{address} : Disconnecting")
+			connected = Interpret(connection, address, message)
 		print(f"{address} {message}")
 		connection.send("Message received".encode(FORMAT))
 	connection.close()
-	print(f"Active Connections {threading.activeCount() - 1}")
 
 #Handles new connection
 def start():
